@@ -1,0 +1,19 @@
+{
+  "name": "LoogaSoft.Advancement.R3",
+  "rootNamespace": "LoogaSoft.Advancement.R3",
+  "references": [
+    "LoogaSoft.Advancement.Runtime",
+    "R3"
+  ],
+  "includePlatforms": [],
+  "excludePlatforms": [],
+  "allowUnsafeCode": false,
+  "overrideReferences": false,
+  "precompiledReferences": [],
+  "autoReferenced": true,
+  "defineConstraints": [
+    "LOOGA_ADVANCEMENT_R3_SUPPORT"
+  ],
+  "versionDefines": [],
+  "noEngineReferences": false
+}

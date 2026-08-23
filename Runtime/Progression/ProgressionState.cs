@@ -4,6 +4,34 @@ using UnityEngine;
 
 namespace LoogaSoft.Advancement
 {
+    public enum ProgressionProgramChangeKind
+    {
+        NodeRank,
+        ProgramLevel,
+        EarnedPoints
+    }
+
+    /// <summary>Describes one confirmed change to a progression program.</summary>
+    public readonly struct ProgressionProgramChange
+    {
+        public ProgressionProgramChange(
+            ProgressionProgramChangeKind kind,
+            int previousValue,
+            int currentValue,
+            string nodeId = "")
+        {
+            Kind = kind;
+            PreviousValue = previousValue;
+            CurrentValue = currentValue;
+            NodeId = nodeId ?? string.Empty;
+        }
+
+        public ProgressionProgramChangeKind Kind { get; }
+        public int PreviousValue { get; }
+        public int CurrentValue { get; }
+        public string NodeId { get; }
+    }
+
     /// <summary>Stores account-wide progression that must not follow a save profile.</summary>
     [Serializable]
     public sealed class AccountCareerProgressionState
@@ -169,6 +197,8 @@ namespace LoogaSoft.Advancement
         public int EarnedPoints => _earnedPoints;
         public IReadOnlyList<ProgressionNodeState> Nodes => _nodes;
 
+        public event Action<ProgressionProgramChange> Changed;
+
         public int GetNodeRank(string nodeId)
         {
             for (int index = 0; index < _nodes.Count; index++)
@@ -206,23 +236,56 @@ namespace LoogaSoft.Advancement
                 if (node == null || !string.Equals(node.NodeId, nodeId, StringComparison.OrdinalIgnoreCase))
                     continue;
 
-                node.SetConfirmedRank(rank, confirmedAtUtc);
+                int previousRank = node.Rank;
+                if (!node.SetConfirmedRank(rank, confirmedAtUtc))
+                    return;
+
+                if (node.Rank != previousRank)
+                {
+                    Changed?.Invoke(new ProgressionProgramChange(
+                        ProgressionProgramChangeKind.NodeRank,
+                        previousRank,
+                        node.Rank,
+                        node.NodeId));
+                }
                 return;
             }
 
-            _nodes.Add(new ProgressionNodeState(nodeId, rank, confirmedAtUtc));
+            ProgressionNodeState created = new(nodeId, rank, confirmedAtUtc);
+            _nodes.Add(created);
+            Changed?.Invoke(new ProgressionProgramChange(
+                ProgressionProgramChangeKind.NodeRank,
+                0,
+                created.Rank,
+                created.NodeId));
         }
 
         /// <summary>Applies a program level that an authoritative service confirmed.</summary>
         public void ApplyConfirmedLevel(int level)
         {
+            int previousLevel = _programLevel;
             _programLevel = Mathf.Max(_programLevel, level);
+            if (_programLevel != previousLevel)
+            {
+                Changed?.Invoke(new ProgressionProgramChange(
+                    ProgressionProgramChangeKind.ProgramLevel,
+                    previousLevel,
+                    _programLevel));
+            }
         }
 
         /// <summary>Applies an earned-point total that an authoritative service confirmed.</summary>
         public void ApplyConfirmedPoints(int earnedPoints)
         {
+            int previousPoints = _earnedPoints;
             _earnedPoints = Mathf.Max(_earnedPoints, earnedPoints);
+            if (_earnedPoints != previousPoints)
+            {
+                Changed?.Invoke(new ProgressionProgramChange(
+                    ProgressionProgramChangeKind.EarnedPoints,
+                    previousPoints,
+                    _earnedPoints));
+            }
         }
     }
 
@@ -244,10 +307,16 @@ namespace LoogaSoft.Advancement
         public int Rank => _rank;
         public string ConfirmedAtUtc => _confirmedAtUtc;
 
-        internal void SetConfirmedRank(int rank, string confirmedAtUtc)
+        internal bool SetConfirmedRank(int rank, string confirmedAtUtc)
         {
-            _rank = Mathf.Max(_rank, rank);
-            _confirmedAtUtc = confirmedAtUtc ?? string.Empty;
+            int confirmedRank = Mathf.Max(_rank, rank);
+            string timestamp = confirmedAtUtc ?? string.Empty;
+            if (_rank == confirmedRank && string.Equals(_confirmedAtUtc, timestamp, StringComparison.Ordinal))
+                return false;
+
+            _rank = confirmedRank;
+            _confirmedAtUtc = timestamp;
+            return true;
         }
     }
 

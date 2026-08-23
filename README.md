@@ -39,6 +39,15 @@ Create ability and ability-tag assets. `AbilityController` applies tag, cooldown
 
 Definitions generate stable IDs. Save stable IDs, ranks, and amounts instead of Unity object references. The snapshot classes do not select a serializer. A project can use JSON, MemoryPack, a database document, or another format in its adapter layer.
 
+## Optional integrations
+
+Looga Advancement keeps its core runtime independent of reactive and serialization libraries. Use the LoogaSoft package support window to enable integrations only when their dependencies are installed.
+
+- **R3** exposes current progression ranks, levels, points, availability, challenge progress, and completion as observable state streams.
+- **MemoryPack** provides version-tolerant DTOs and converters for progression and challenge snapshots.
+
+Disabling either integration removes its assembly from compilation. It does not change the core snapshot or evaluation APIs.
+
 ## Existing project migration
 
 Keep an existing definition script's Unity GUID when moving its implementation into this package. Remove the old script only after the package owns that GUID. This lets catalogs, graphs, programs, and their sub-assets resolve without reauthoring them.

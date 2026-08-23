@@ -32,6 +32,9 @@ namespace LoogaSoft.Advancement
     [Serializable]
     public sealed class ProgressionProgramSnapshot
     {
+        public const int CurrentSchemaVersion = 1;
+
+        public int schemaVersion = CurrentSchemaVersion;
         public string programId = string.Empty;
         public string seasonId = string.Empty;
         public int programLevel = 1;
@@ -45,5 +48,25 @@ namespace LoogaSoft.Advancement
         public string nodeId = string.Empty;
         public int rank;
         public string confirmedAtUtc = string.Empty;
+    }
+
+    /// <summary>Stores challenge progress without selecting a serialization technology.</summary>
+    [Serializable]
+    public sealed class ChallengeProgressSnapshot
+    {
+        public const int CurrentSchemaVersion = 1;
+
+        public int schemaVersion = CurrentSchemaVersion;
+        public string challengeId = string.Empty;
+        public int completionCount;
+        public string completedAtUtc = string.Empty;
+        public List<ChallengeObjectiveSnapshot> objectives = new();
+    }
+
+    [Serializable]
+    public sealed class ChallengeObjectiveSnapshot
+    {
+        public int objectiveIndex;
+        public int amount;
     }
 }

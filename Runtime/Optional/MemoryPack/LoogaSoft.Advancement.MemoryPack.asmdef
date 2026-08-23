@@ -1,0 +1,19 @@
+{
+  "name": "LoogaSoft.Advancement.MemoryPack",
+  "rootNamespace": "LoogaSoft.Advancement.MemoryPack",
+  "references": [
+    "LoogaSoft.Advancement.Runtime",
+    "MemoryPack.Unity"
+  ],
+  "includePlatforms": [],
+  "excludePlatforms": [],
+  "allowUnsafeCode": false,
+  "overrideReferences": false,
+  "precompiledReferences": [],
+  "autoReferenced": true,
+  "defineConstraints": [
+    "LOOGA_ADVANCEMENT_MEMORYPACK_SUPPORT"
+  ],
+  "versionDefines": [],
+  "noEngineReferences": false
+}
