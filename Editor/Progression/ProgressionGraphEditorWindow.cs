@@ -27,7 +27,7 @@ namespace LoogaSoft.Advancement.Editor
         private int _selectedNodeIndex = -1;
         private List<ProgressionValidationIssue> _issues = new();
 
-        [MenuItem("LoogaSoft/Advancement/Progression Graph")]
+        [MenuItem("LoogaSoft/Advancement/Progression Graph", priority = 20)]
         public static void Open()
         {
             Open(Selection.activeObject as ProgressionGraphDefinition);
