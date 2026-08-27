@@ -5,7 +5,7 @@ using UnityEngine;
 namespace LoogaSoft.Advancement
 {
     /// <summary>Collects the progression programs used by the project.</summary>
-    [CreateAssetMenu(fileName = "Progression Catalog", menuName = "LoogaSoft/Advancement/Catalog")]
+    [CreateAssetMenu(fileName = "Progression Catalog", menuName = "LoogaSoft/Advancement/Progression/Catalog")]
     public sealed class ProgressionCatalog : ScriptableObject
     {
         private static ProgressionCatalog _active;

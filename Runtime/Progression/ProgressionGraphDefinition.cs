@@ -20,7 +20,7 @@ namespace LoogaSoft.Advancement
     }
 
     /// <summary>Defines the authored nodes and links for one progression graph.</summary>
-    [CreateAssetMenu(fileName = "Progression Graph", menuName = "LoogaSoft/Advancement/Graph")]
+    [CreateAssetMenu(fileName = "Progression Graph", menuName = "LoogaSoft/Advancement/Progression/Graph")]
     public sealed class ProgressionGraphDefinition : ScriptableObject
     {
         public static event Action<ProgressionGraphDefinition> DefinitionChanged;

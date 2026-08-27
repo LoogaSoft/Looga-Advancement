@@ -27,7 +27,7 @@ namespace LoogaSoft.Advancement
     }
 
     /// <summary>Defines the policy, schedule, and graph for one progression program.</summary>
-    [CreateAssetMenu(fileName = "Progression Program", menuName = "LoogaSoft/Advancement/Program")]
+    [CreateAssetMenu(fileName = "Progression Program", menuName = "LoogaSoft/Advancement/Progression/Program")]
     public sealed class ProgressionProgramDefinition : ScriptableObject
     {
         [SerializeField] private string _stableId = string.Empty;
