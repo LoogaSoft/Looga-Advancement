@@ -153,7 +153,7 @@ namespace LoogaSoft.Advancement
             _nodes ??= new List<ProgressionNodeDefinition>();
 
             if (_identityVersion < 1)
-                RegenerateInternalIds();
+                _identityVersion = 1;
 
             EnsureUniqueInternalIds();
             _stableId = ProgressionIdUtility.EnsureGenerated(_stableId, "graph");
@@ -165,42 +165,6 @@ namespace LoogaSoft.Advancement
                 _nodes[index]?.Normalize(index);
 
             DefinitionChanged?.Invoke(this);
-        }
-
-        private void RegenerateInternalIds()
-        {
-            Dictionary<string, string> branchIds = new(StringComparer.OrdinalIgnoreCase);
-            Dictionary<string, string> nodeIds = new(StringComparer.OrdinalIgnoreCase);
-            _stableId = ProgressionIdUtility.CreateGenerated("graph");
-
-            for (int index = 0; index < _branches.Count; index++)
-            {
-                ProgressionBranchDefinition branch = _branches[index];
-                if (branch == null)
-                    continue;
-
-                string replacement = ProgressionIdUtility.CreateGenerated("branch");
-                if (!string.IsNullOrWhiteSpace(branch.StableId))
-                    branchIds[branch.StableId] = replacement;
-                branch.AssignStableId(replacement);
-            }
-
-            for (int index = 0; index < _nodes.Count; index++)
-            {
-                ProgressionNodeDefinition node = _nodes[index];
-                if (node == null)
-                    continue;
-
-                string replacement = ProgressionIdUtility.CreateGenerated("node");
-                if (!string.IsNullOrWhiteSpace(node.StableId))
-                    nodeIds[node.StableId] = replacement;
-                node.AssignStableId(replacement);
-            }
-
-            for (int index = 0; index < _nodes.Count; index++)
-                _nodes[index]?.RemapInternalIds(branchIds, nodeIds);
-
-            _identityVersion = 1;
         }
 
         private void EnsureUniqueInternalIds()

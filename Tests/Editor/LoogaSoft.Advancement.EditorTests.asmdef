@@ -1,0 +1,21 @@
+{
+  "name": "LoogaSoft.Advancement.EditorTests",
+  "rootNamespace": "LoogaSoft.Advancement.Tests",
+  "references": [
+    "LoogaSoft.Advancement.Runtime"
+  ],
+  "includePlatforms": [
+    "Editor"
+  ],
+  "excludePlatforms": [],
+  "allowUnsafeCode": false,
+  "overrideReferences": false,
+  "precompiledReferences": [],
+  "autoReferenced": false,
+  "defineConstraints": [],
+  "versionDefines": [],
+  "noEngineReferences": false,
+  "optionalUnityReferences": [
+    "TestAssemblies"
+  ]
+}

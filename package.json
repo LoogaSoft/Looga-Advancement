@@ -2,7 +2,7 @@
   "displayName": "Looga Advancement",
   "name": "com.loogasoft.loogaadvancement",
   "description": "Designer-first progression graphs, challenges, perks, and ability contracts for Unity projects.",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "unity": "6000.0",
   "author": {
     "name": "LoogaSoft"

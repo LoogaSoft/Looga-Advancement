@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.1
+
+- Preserved valid authored graph, branch, and node IDs during identity migration.
+
 ## 0.1.0
 
 - Added progression graph definitions, evaluation, effects, state, and schedules.
