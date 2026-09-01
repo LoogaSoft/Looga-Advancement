@@ -25,6 +25,8 @@ This boundary lets a project use any backend, networking library, inventory syst
 
 Create a **Progression Graph** and open it with **LoogaSoft > Advancement > Progression Graph**. Root nodes select a branch. Connected nodes inherit their branch from their prerequisites. A node with prerequisites from multiple branches becomes a shared node.
 
+Enable **Lattice** in the graph toolbar to author a compact tree silhouette. Select a node to show valid child cells, then select a cell to create and connect a node. A **LINK** cell connects the selected node to an existing node. Enable **Add Roots** to place multiple starting nodes along the top row. Drag a node to move it to another free lattice cell. The graph supports rectangular, diamond, hexagonal, triangular, and staggered lattices.
+
 Use a **Progression Program** to combine a graph with point, level, season, and persistence policies. `ProgressionEvaluator` evaluates state but does not change it. The game must validate and commit purchases through its authority layer.
 
 ## Challenges

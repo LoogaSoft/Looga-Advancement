@@ -11,6 +11,23 @@ namespace LoogaSoft.Advancement
         Manual
     }
 
+    /// <summary>Defines how designers place nodes in the graph editor.</summary>
+    public enum ProgressionGraphAuthoringMode
+    {
+        Freeform,
+        Lattice
+    }
+
+    /// <summary>Defines the lattice used to author a graph silhouette.</summary>
+    public enum ProgressionGraphLatticeType
+    {
+        Rectangular,
+        Diamond,
+        Hexagonal,
+        Triangular,
+        Staggered
+    }
+
     /// <summary>Defines how many prerequisite entries a node must satisfy.</summary>
     public enum ProgressionPrerequisiteMode
     {
@@ -31,18 +48,31 @@ namespace LoogaSoft.Advancement
         [SerializeField, Min(80f)] private float _tierSpacing = 250f;
         [SerializeField, Min(60f)] private float _nodeSpacing = 110f;
         [SerializeField, Min(80f)] private float _branchSpacing = 150f;
+        [SerializeField] private ProgressionGraphAuthoringMode _authoringMode;
+        [SerializeField] private ProgressionGraphLatticeType _latticeType =
+            ProgressionGraphLatticeType.Diamond;
+        [SerializeField] private Vector2 _latticeSpacing = new(230f, 240f);
         [SerializeField] private List<ProgressionBranchDefinition> _branches = new();
         [SerializeField] private List<ProgressionNodeDefinition> _nodes = new();
 
         public string StableId => _stableId;
         public ProgressionGraphLayoutMode LayoutMode => _layoutMode;
+        public ProgressionGraphAuthoringMode AuthoringMode => _authoringMode;
+        public ProgressionGraphLatticeType LatticeType => _latticeType;
+        public Vector2 LatticeSpacing => _latticeSpacing;
         public IReadOnlyList<ProgressionBranchDefinition> Branches => _branches;
         public IReadOnlyList<ProgressionNodeDefinition> Nodes => _nodes;
 
         /// <summary>Returns the authored or automatically arranged position for one node.</summary>
         public Vector2 GetNodePosition(ProgressionNodeDefinition node)
         {
-            if (node == null || _layoutMode == ProgressionGraphLayoutMode.Manual)
+            if (node == null)
+                return Vector2.zero;
+
+            if (_authoringMode == ProgressionGraphAuthoringMode.Lattice && node.HasLatticeCoordinate)
+                return GetLatticePosition(node.LatticeCoordinate);
+
+            if (_layoutMode == ProgressionGraphLayoutMode.Manual)
                 return node?.GraphPosition ?? Vector2.zero;
 
             string layoutBranchId = GetLayoutBranchId(node);
@@ -52,6 +82,26 @@ namespace LoogaSoft.Advancement
             return new Vector2(
                 branchOffset + laneIndex * _nodeSpacing,
                 Mathf.Max(0, node.Tier - 1) * _tierSpacing);
+        }
+
+        /// <summary>Returns the graph position for one lattice coordinate.</summary>
+        public Vector2 GetLatticePosition(Vector2Int coordinate)
+        {
+            float rowScale = GetLatticeRowScale();
+            float rowOffset = UsesStaggeredRows() && (coordinate.y & 1) != 0 ? 0.5f : 0f;
+            return new Vector2(
+                (coordinate.x + rowOffset) * _latticeSpacing.x,
+                coordinate.y * _latticeSpacing.y * rowScale);
+        }
+
+        /// <summary>Returns the nearest lattice coordinate for one graph position.</summary>
+        public Vector2Int GetLatticeCoordinate(Vector2 graphPosition)
+        {
+            float rowHeight = Mathf.Max(1f, _latticeSpacing.y * GetLatticeRowScale());
+            int row = Mathf.RoundToInt(graphPosition.y / rowHeight);
+            float rowOffset = UsesStaggeredRows() && (row & 1) != 0 ? 0.5f : 0f;
+            int column = Mathf.RoundToInt(graphPosition.x / Mathf.Max(1f, _latticeSpacing.x) - rowOffset);
+            return new Vector2Int(column, row);
         }
 
         public bool TryGetNode(string nodeId, out ProgressionNodeDefinition node)
@@ -149,6 +199,8 @@ namespace LoogaSoft.Advancement
             _tierSpacing = Mathf.Max(80f, _tierSpacing);
             _nodeSpacing = Mathf.Max(60f, _nodeSpacing);
             _branchSpacing = Mathf.Max(80f, _branchSpacing);
+            _latticeSpacing.x = Mathf.Max(60f, _latticeSpacing.x);
+            _latticeSpacing.y = Mathf.Max(60f, _latticeSpacing.y);
             _branches ??= new List<ProgressionBranchDefinition>();
             _nodes ??= new List<ProgressionNodeDefinition>();
 
@@ -165,6 +217,22 @@ namespace LoogaSoft.Advancement
                 _nodes[index]?.Normalize(index);
 
             DefinitionChanged?.Invoke(this);
+        }
+
+        private float GetLatticeRowScale()
+        {
+            return _latticeType switch
+            {
+                ProgressionGraphLatticeType.Diamond => 0.5f,
+                ProgressionGraphLatticeType.Hexagonal => 0.75f,
+                ProgressionGraphLatticeType.Triangular => 0.5f,
+                _ => 1f
+            };
+        }
+
+        private bool UsesStaggeredRows()
+        {
+            return _latticeType != ProgressionGraphLatticeType.Rectangular;
         }
 
         private void EnsureUniqueInternalIds()
@@ -352,6 +420,8 @@ namespace LoogaSoft.Advancement
         [SerializeField] private string _branchId = string.Empty;
         [SerializeField, Min(1)] private int _tier = 1;
         [SerializeField] private Vector2 _graphPosition;
+        [SerializeField, HideInInspector] private bool _hasLatticeCoordinate;
+        [SerializeField, HideInInspector] private Vector2Int _latticeCoordinate;
         [SerializeField, Min(1)] private int _maxRank = 1;
         [SerializeField, Min(0)] private int _pointCostPerRank;
         [SerializeField] private ProgressionPrerequisiteDefinition _prerequisites = new();
@@ -368,6 +438,8 @@ namespace LoogaSoft.Advancement
         public string OriginBranchId => _branchId;
         public int Tier => _tier;
         public Vector2 GraphPosition => _graphPosition;
+        public bool HasLatticeCoordinate => _hasLatticeCoordinate;
+        public Vector2Int LatticeCoordinate => _latticeCoordinate;
         public int MaxRank => _maxRank;
         public int PointCostPerRank => _pointCostPerRank;
         public ProgressionPrerequisiteDefinition Prerequisites

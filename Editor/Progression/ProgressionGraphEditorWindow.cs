@@ -23,6 +23,8 @@ namespace LoogaSoft.Advancement.Editor
         private ProgressionGraphCanvas _canvas;
         private IMGUIContainer _inspector;
         private ObjectField _graphField;
+        private ToolbarToggle _latticeToggle;
+        private ToolbarToggle _rootPlacementToggle;
         private ProgressionNodeSearchProvider _searchProvider;
         private int _selectedNodeIndex = -1;
         private List<ProgressionValidationIssue> _issues = new();
@@ -64,6 +66,14 @@ namespace LoogaSoft.Advancement.Editor
             _graphField.RegisterValueChangedCallback(change =>
                 SetGraph(change.newValue as ProgressionGraphDefinition));
             toolbar.Add(_graphField);
+            _latticeToggle = new ToolbarToggle { text = "Lattice" };
+            _latticeToggle.RegisterValueChangedCallback(change =>
+                SetLatticeAuthoring(change.newValue));
+            toolbar.Add(_latticeToggle);
+            _rootPlacementToggle = new ToolbarToggle { text = "Add Roots" };
+            _rootPlacementToggle.RegisterValueChangedCallback(change =>
+                _canvas?.SetRootPlacement(change.newValue));
+            toolbar.Add(_rootPlacementToggle);
             toolbar.Add(CreateToolbarButton("Add Node", AddNodeAtViewCenter));
             toolbar.Add(CreateToolbarButton("Arrange Top Down", ArrangeTopDown));
             toolbar.Add(CreateToolbarButton("Frame All", () => _canvas?.FrameAll()));
@@ -112,10 +122,33 @@ namespace LoogaSoft.Advancement.Editor
         {
             _serializedGraph.Update();
             EditorGUILayout.LabelField(_graph.name, EditorStyles.boldLabel);
-            EditorGUILayout.PropertyField(_serializedGraph.FindProperty("_layoutMode"));
-            EditorGUILayout.PropertyField(_serializedGraph.FindProperty("_tierSpacing"));
-            EditorGUILayout.PropertyField(_serializedGraph.FindProperty("_nodeSpacing"));
-            EditorGUILayout.PropertyField(_serializedGraph.FindProperty("_branchSpacing"));
+            ProgressionGraphAuthoringMode authoringMode = _graph.AuthoringMode;
+            ProgressionGraphAuthoringMode nextAuthoringMode =
+                (ProgressionGraphAuthoringMode)EditorGUILayout.EnumPopup(
+                    "Authoring Mode",
+                    authoringMode);
+            if (nextAuthoringMode != authoringMode)
+            {
+                SetLatticeAuthoring(nextAuthoringMode == ProgressionGraphAuthoringMode.Lattice);
+                GUIUtility.ExitGUI();
+                return;
+            }
+
+            if (authoringMode == ProgressionGraphAuthoringMode.Lattice)
+            {
+                using (new EditorGUI.DisabledScope(true))
+                    EditorGUILayout.EnumPopup("Layout Mode", ProgressionGraphLayoutMode.Manual);
+
+                EditorGUILayout.PropertyField(_serializedGraph.FindProperty("_latticeType"));
+                EditorGUILayout.PropertyField(_serializedGraph.FindProperty("_latticeSpacing"));
+            }
+            else
+            {
+                EditorGUILayout.PropertyField(_serializedGraph.FindProperty("_layoutMode"));
+                EditorGUILayout.PropertyField(_serializedGraph.FindProperty("_tierSpacing"));
+                EditorGUILayout.PropertyField(_serializedGraph.FindProperty("_nodeSpacing"));
+                EditorGUILayout.PropertyField(_serializedGraph.FindProperty("_branchSpacing"));
+            }
             EditorGUILayout.Space(5f);
             EditorGUILayout.PropertyField(_serializedGraph.FindProperty("_branches"), true);
 
@@ -127,8 +160,10 @@ namespace LoogaSoft.Advancement.Editor
 
             EditorGUILayout.Space(6f);
             EditorGUILayout.HelpBox(
-                "Drag from a node's bottom port to another node's top port. " +
-                "Drop a connection on empty canvas to create and connect a new node.",
+                authoringMode == ProgressionGraphAuthoringMode.Lattice
+                    ? "Select a node to show its possible child cells. Enable Add Roots to place more starting nodes."
+                    : "Drag from a node's bottom port to another node's top port. " +
+                      "Drop a connection on empty canvas to create and connect a new node.",
                 MessageType.Info);
         }
 
@@ -158,6 +193,16 @@ namespace LoogaSoft.Advancement.Editor
             {
                 EditorGUILayout.PropertyField(node.FindPropertyRelative("_tier"));
                 EditorGUILayout.PropertyField(node.FindPropertyRelative("_maxRank"));
+            }
+
+            if (_graph.AuthoringMode == ProgressionGraphAuthoringMode.Lattice)
+            {
+                using (new EditorGUI.DisabledScope(true))
+                {
+                    EditorGUILayout.Vector2IntField(
+                        "Lattice Coordinate",
+                        _graph.Nodes[_selectedNodeIndex].LatticeCoordinate);
+                }
             }
 
             EditorGUILayout.PropertyField(node.FindPropertyRelative("_pointCostPerRank"));
@@ -278,6 +323,14 @@ namespace LoogaSoft.Advancement.Editor
 
             Vector2 graphPosition = _canvas.CanvasToGraphPosition(canvasPosition);
             Vector2 screenPosition = GUIUtility.GUIToScreenPoint(Event.current?.mousePosition ?? canvasPosition);
+            OpenNodeSearch(graphPosition, screenPosition, sourceNodeId);
+        }
+
+        private void OpenNodeSearch(
+            Vector2 graphPosition,
+            Vector2 screenPosition,
+            string sourceNodeId)
+        {
             _searchProvider.Prepare(graphPosition, sourceNodeId);
             SearchWindow.Open(new SearchWindowContext(screenPosition), _searchProvider);
         }
@@ -288,6 +341,28 @@ namespace LoogaSoft.Advancement.Editor
                 return;
 
             EnsureManualLayout();
+            bool usesLattice = _graph.AuthoringMode == ProgressionGraphAuthoringMode.Lattice;
+            Vector2Int latticeCoordinate = usesLattice
+                ? _graph.GetLatticeCoordinate(graphPosition)
+                : default;
+            if (usesLattice)
+            {
+                int occupiedIndex = FindNodeAtLatticeCoordinate(latticeCoordinate);
+                if (occupiedIndex >= 0)
+                {
+                    if (!string.IsNullOrEmpty(sourceNodeId))
+                    {
+                        AddPrerequisite(sourceNodeId, _graph.Nodes[occupiedIndex].StableId);
+                        RebuildCanvas();
+                    }
+
+                    SelectNode(occupiedIndex);
+                    return;
+                }
+
+                graphPosition = _graph.GetLatticePosition(latticeCoordinate);
+            }
+
             Undo.RecordObject(_graph, "Create Progression Node");
             _serializedGraph.Update();
             SerializedProperty nodes = _serializedGraph.FindProperty("_nodes");
@@ -298,11 +373,21 @@ namespace LoogaSoft.Advancement.Editor
                        _graph.TryGetNode(sourceNodeId, out ProgressionNodeDefinition source)
                 ? source.Tier + 1
                 : 1;
-            ResetNode(node, index, graphPosition, branchId, sourceNodeId, tier);
+            ResetNode(
+                node,
+                index,
+                graphPosition,
+                branchId,
+                sourceNodeId,
+                tier,
+                usesLattice,
+                latticeCoordinate);
             _serializedGraph.ApplyModifiedProperties();
             EditorUtility.SetDirty(_graph);
             RebuildCanvas();
             SelectNode(index);
+            if (!string.IsNullOrEmpty(sourceNodeId))
+                SetRootPlacement(false);
             ValidateGraph();
         }
 
@@ -381,23 +466,88 @@ namespace LoogaSoft.Advancement.Editor
             return false;
         }
 
-        internal void SaveNodePosition(int nodeIndex, Vector2 graphPosition)
+        internal Vector2 SaveNodePosition(int nodeIndex, Vector2 graphPosition)
         {
             if (_graph == null || nodeIndex < 0 || nodeIndex >= _graph.Nodes.Count)
-                return;
+                return graphPosition;
 
             EnsureManualLayout();
+            Vector2Int latticeCoordinate = default;
+            bool usesLattice = _graph.AuthoringMode == ProgressionGraphAuthoringMode.Lattice;
+            if (usesLattice)
+            {
+                latticeCoordinate = _graph.GetLatticeCoordinate(graphPosition);
+                if (FindNodeAtLatticeCoordinate(latticeCoordinate, nodeIndex) >= 0)
+                    return _graph.GetNodePosition(_graph.Nodes[nodeIndex]);
+
+                graphPosition = _graph.GetLatticePosition(latticeCoordinate);
+            }
+
             _serializedGraph.Update();
             SerializedProperty node = _serializedGraph.FindProperty("_nodes").GetArrayElementAtIndex(nodeIndex);
             node.FindPropertyRelative("_graphPosition").vector2Value = graphPosition;
+            node.FindPropertyRelative("_hasLatticeCoordinate").boolValue = usesLattice;
+            node.FindPropertyRelative("_latticeCoordinate").vector2IntValue = latticeCoordinate;
             _serializedGraph.ApplyModifiedPropertiesWithoutUndo();
             EditorUtility.SetDirty(_graph);
+            _canvas?.RefreshHints();
+            return graphPosition;
         }
 
         internal void SelectNode(int nodeIndex)
         {
             _selectedNodeIndex = nodeIndex;
             _inspector?.MarkDirtyRepaint();
+            _canvas?.RefreshHints();
+        }
+
+        internal int FindNodeAtLatticeCoordinate(Vector2Int coordinate, int ignoredIndex = -1)
+        {
+            if (_graph == null)
+                return -1;
+
+            for (int index = 0; index < _graph.Nodes.Count; index++)
+            {
+                ProgressionNodeDefinition node = _graph.Nodes[index];
+                if (index != ignoredIndex &&
+                    node != null &&
+                    node.HasLatticeCoordinate &&
+                    node.LatticeCoordinate == coordinate)
+                {
+                    return index;
+                }
+            }
+
+            return -1;
+        }
+
+        internal void ActivateLatticeHint(
+            Vector2Int coordinate,
+            string sourceNodeId,
+            Vector2 pointerPosition)
+        {
+            int occupiedIndex = FindNodeAtLatticeCoordinate(coordinate);
+            if (occupiedIndex >= 0)
+            {
+                if (!string.IsNullOrEmpty(sourceNodeId))
+                {
+                    AddPrerequisite(sourceNodeId, _graph.Nodes[occupiedIndex].StableId);
+                    RebuildCanvas();
+                }
+
+                SelectNode(occupiedIndex);
+                return;
+            }
+
+            Vector2 graphPosition = _graph.GetLatticePosition(coordinate);
+            if (string.IsNullOrEmpty(sourceNodeId))
+            {
+                Vector2 screenPosition = position.position + pointerPosition;
+                OpenNodeSearch(graphPosition, screenPosition, string.Empty);
+                return;
+            }
+
+            CreateNode(graphPosition, string.Empty, sourceNodeId);
         }
 
         internal IReadOnlyList<ProgressionBranchDefinition> GetBranches()
@@ -446,6 +596,116 @@ namespace LoogaSoft.Advancement.Editor
             OpenNodeSearch(_canvas.layout.center, string.Empty);
         }
 
+        private void SetLatticeAuthoring(bool enabled)
+        {
+            if (_graph == null || _serializedGraph == null)
+            {
+                _latticeToggle?.SetValueWithoutNotify(false);
+                return;
+            }
+
+            ProgressionGraphAuthoringMode mode = enabled
+                ? ProgressionGraphAuthoringMode.Lattice
+                : ProgressionGraphAuthoringMode.Freeform;
+            if (_graph.AuthoringMode == mode)
+            {
+                RefreshToolbarState();
+                return;
+            }
+
+            Vector2[] positions = new Vector2[_graph.Nodes.Count];
+            for (int index = 0; index < positions.Length; index++)
+                positions[index] = _graph.GetNodePosition(_graph.Nodes[index]);
+
+            Undo.RecordObject(_graph, enabled ? "Enable Lattice Authoring" : "Disable Lattice Authoring");
+            _serializedGraph.Update();
+            _serializedGraph.FindProperty("_authoringMode").enumValueIndex = (int)mode;
+            _serializedGraph.FindProperty("_layoutMode").enumValueIndex =
+                (int)ProgressionGraphLayoutMode.Manual;
+            SerializedProperty nodes = _serializedGraph.FindProperty("_nodes");
+            HashSet<Vector2Int> occupied = new();
+            for (int index = 0; index < positions.Length; index++)
+            {
+                SerializedProperty node = nodes.GetArrayElementAtIndex(index);
+                node.FindPropertyRelative("_graphPosition").vector2Value = positions[index];
+                node.FindPropertyRelative("_hasLatticeCoordinate").boolValue = enabled;
+                if (!enabled)
+                    continue;
+
+                Vector2Int coordinate = FindNearestAvailableCoordinate(
+                    _graph.GetLatticeCoordinate(positions[index]),
+                    occupied);
+                occupied.Add(coordinate);
+                node.FindPropertyRelative("_latticeCoordinate").vector2IntValue = coordinate;
+                node.FindPropertyRelative("_graphPosition").vector2Value =
+                    _graph.GetLatticePosition(coordinate);
+            }
+
+            _serializedGraph.ApplyModifiedProperties();
+            EditorUtility.SetDirty(_graph);
+            SetRootPlacement(false);
+            RebuildCanvas();
+            RefreshToolbarState();
+            _canvas?.FrameAll();
+            _inspector?.MarkDirtyRepaint();
+        }
+
+        private void SetRootPlacement(bool active)
+        {
+            bool enabled = active &&
+                           _graph != null &&
+                           _graph.AuthoringMode == ProgressionGraphAuthoringMode.Lattice;
+            _rootPlacementToggle?.SetValueWithoutNotify(enabled);
+            _canvas?.SetRootPlacement(enabled);
+        }
+
+        private void RefreshToolbarState()
+        {
+            bool hasGraph = _graph != null;
+            bool usesLattice = hasGraph &&
+                               _graph.AuthoringMode == ProgressionGraphAuthoringMode.Lattice;
+            _latticeToggle?.SetEnabled(hasGraph);
+            _latticeToggle?.SetValueWithoutNotify(usesLattice);
+            _rootPlacementToggle?.SetEnabled(usesLattice);
+            if (!usesLattice)
+                SetRootPlacement(false);
+        }
+
+        private static Vector2Int FindNearestAvailableCoordinate(
+            Vector2Int desired,
+            ISet<Vector2Int> occupied)
+        {
+            if (!occupied.Contains(desired))
+                return desired;
+
+            for (int radius = 1; radius < 128; radius++)
+            {
+                Vector2Int left = desired + new Vector2Int(-radius, 0);
+                if (!occupied.Contains(left))
+                    return left;
+
+                Vector2Int right = desired + new Vector2Int(radius, 0);
+                if (!occupied.Contains(right))
+                    return right;
+
+                for (int horizontal = -radius; horizontal <= radius; horizontal++)
+                {
+                    Vector2Int bottom = desired + new Vector2Int(horizontal, radius);
+                    if (!occupied.Contains(bottom))
+                        return bottom;
+                }
+
+                for (int horizontal = -radius; horizontal <= radius; horizontal++)
+                {
+                    Vector2Int top = desired + new Vector2Int(horizontal, -radius);
+                    if (!occupied.Contains(top))
+                        return top;
+                }
+            }
+
+            return desired;
+        }
+
         private void ArrangeTopDown()
         {
             if (_graph == null || _serializedGraph == null)
@@ -453,12 +713,15 @@ namespace LoogaSoft.Advancement.Editor
 
             Undo.RecordObject(_graph, "Arrange Progression Graph");
             _serializedGraph.Update();
+            _serializedGraph.FindProperty("_authoringMode").enumValueIndex =
+                (int)ProgressionGraphAuthoringMode.Freeform;
             _serializedGraph.FindProperty("_layoutMode").enumValueIndex =
                 (int)ProgressionGraphLayoutMode.Automatic;
             _serializedGraph.ApplyModifiedProperties();
             SnapshotResolvedPositions();
             RebuildCanvas();
             _canvas.FrameAll();
+            RefreshToolbarState();
         }
 
         private void EnsureManualLayout()
@@ -496,6 +759,7 @@ namespace LoogaSoft.Advancement.Editor
             _selectedNodeIndex = -1;
             ValidateGraph();
             RebuildCanvas();
+            RefreshToolbarState();
             _inspector?.MarkDirtyRepaint();
         }
 
@@ -529,7 +793,9 @@ namespace LoogaSoft.Advancement.Editor
             Vector2 graphPosition,
             string branchId,
             string sourceNodeId,
-            int tier)
+            int tier,
+            bool usesLattice,
+            Vector2Int latticeCoordinate)
         {
             node.FindPropertyRelative("_stableId").stringValue = $"node-{Guid.NewGuid():N}";
             node.FindPropertyRelative("_displayName").stringValue = $"New Node {index + 1}";
@@ -538,6 +804,8 @@ namespace LoogaSoft.Advancement.Editor
             node.FindPropertyRelative("_branchId").stringValue = branchId ?? string.Empty;
             node.FindPropertyRelative("_tier").intValue = Mathf.Max(1, tier);
             node.FindPropertyRelative("_graphPosition").vector2Value = graphPosition;
+            node.FindPropertyRelative("_hasLatticeCoordinate").boolValue = usesLattice;
+            node.FindPropertyRelative("_latticeCoordinate").vector2IntValue = latticeCoordinate;
             node.FindPropertyRelative("_maxRank").intValue = 1;
             node.FindPropertyRelative("_pointCostPerRank").intValue = 0;
 
@@ -565,7 +833,9 @@ namespace LoogaSoft.Advancement.Editor
             private readonly ProgressionEdgeConnectorListener _edgeListener;
             private readonly Dictionary<string, ProgressionNodeElement> _nodes =
                 new(StringComparer.OrdinalIgnoreCase);
+            private readonly List<ProgressionLatticeHintElement> _hints = new();
             private bool _rebuilding;
+            private bool _rootPlacement;
 
             public ProgressionGraphCanvas(ProgressionGraphEditorWindow owner)
             {
@@ -587,6 +857,7 @@ namespace LoogaSoft.Advancement.Editor
                 _rebuilding = true;
                 DeleteElements(graphElements.ToList());
                 _nodes.Clear();
+                _hints.Clear();
 
                 if (graph != null)
                 {
@@ -630,6 +901,148 @@ namespace LoogaSoft.Advancement.Editor
                 }
 
                 _rebuilding = false;
+                RefreshHints();
+            }
+
+            public void SetRootPlacement(bool active)
+            {
+                _rootPlacement = active;
+                RefreshHints();
+            }
+
+            public void RefreshHints()
+            {
+                for (int index = 0; index < _hints.Count; index++)
+                {
+                    if (_hints[index]?.parent != null)
+                        RemoveElement(_hints[index]);
+                }
+
+                _hints.Clear();
+                ProgressionGraphDefinition graph = _owner._graph;
+                if (_rebuilding ||
+                    graph == null ||
+                    graph.AuthoringMode != ProgressionGraphAuthoringMode.Lattice)
+                {
+                    return;
+                }
+
+                if (_rootPlacement)
+                {
+                    BuildRootHints(graph);
+                    return;
+                }
+
+                int selectedIndex = _owner._selectedNodeIndex;
+                if (selectedIndex < 0 || selectedIndex >= graph.Nodes.Count)
+                    return;
+
+                ProgressionNodeDefinition source = graph.Nodes[selectedIndex];
+                if (source == null || !source.HasLatticeCoordinate)
+                    return;
+
+                List<Vector2Int> childCoordinates = GetChildCoordinates(
+                    graph.LatticeType,
+                    source.LatticeCoordinate);
+                for (int index = 0; index < childCoordinates.Count; index++)
+                {
+                    Vector2Int coordinate = childCoordinates[index];
+                    int occupiedIndex = _owner.FindNodeAtLatticeCoordinate(coordinate);
+                    if (occupiedIndex == selectedIndex)
+                        continue;
+
+                    if (occupiedIndex >= 0 &&
+                        _owner.HasConnection(source.StableId, graph.Nodes[occupiedIndex].StableId))
+                    {
+                        continue;
+                    }
+
+                    AddHint(graph, coordinate, source.StableId, occupiedIndex >= 0);
+                }
+            }
+
+            private void BuildRootHints(ProgressionGraphDefinition graph)
+            {
+                int rootRow = 0;
+                int minimumColumn = -3;
+                int maximumColumn = 3;
+                bool found = false;
+                for (int index = 0; index < graph.Nodes.Count; index++)
+                {
+                    ProgressionNodeDefinition node = graph.Nodes[index];
+                    if (node == null || !node.HasLatticeCoordinate)
+                        continue;
+
+                    bool isRoot = node.Prerequisites.Entries.Count == 0;
+                    if (isRoot && (!found || node.LatticeCoordinate.y < rootRow))
+                    {
+                        rootRow = node.LatticeCoordinate.y;
+                        minimumColumn = node.LatticeCoordinate.x;
+                        maximumColumn = node.LatticeCoordinate.x;
+                        found = true;
+                    }
+                    else if (isRoot && node.LatticeCoordinate.y == rootRow)
+                    {
+                        minimumColumn = Mathf.Min(minimumColumn, node.LatticeCoordinate.x);
+                        maximumColumn = Mathf.Max(maximumColumn, node.LatticeCoordinate.x);
+                    }
+                }
+
+                if (found)
+                {
+                    minimumColumn -= 3;
+                    maximumColumn += 3;
+                }
+                for (int column = minimumColumn; column <= maximumColumn; column++)
+                {
+                    Vector2Int coordinate = new(column, rootRow);
+                    if (_owner.FindNodeAtLatticeCoordinate(coordinate) < 0)
+                        AddHint(graph, coordinate, string.Empty, false);
+                }
+            }
+
+            private void AddHint(
+                ProgressionGraphDefinition graph,
+                Vector2Int coordinate,
+                string sourceNodeId,
+                bool linksExistingNode)
+            {
+                ProgressionLatticeHintElement hint = new(
+                    coordinate,
+                    linksExistingNode,
+                    pointerPosition => _owner.ActivateLatticeHint(
+                        coordinate,
+                        sourceNodeId,
+                        pointerPosition));
+                Vector2 position = graph.GetLatticePosition(coordinate);
+                hint.SetPosition(new Rect(
+                    position + new Vector2(
+                        (NodeWidth - ProgressionLatticeHintElement.Width) * 0.5f,
+                        (NodeHeight - ProgressionLatticeHintElement.Height) * 0.5f),
+                    new Vector2(
+                        ProgressionLatticeHintElement.Width,
+                        ProgressionLatticeHintElement.Height)));
+                AddElement(hint);
+                _hints.Add(hint);
+            }
+
+            private static List<Vector2Int> GetChildCoordinates(
+                ProgressionGraphLatticeType latticeType,
+                Vector2Int source)
+            {
+                List<Vector2Int> coordinates = new(3);
+                if (latticeType == ProgressionGraphLatticeType.Rectangular)
+                {
+                    coordinates.Add(source + new Vector2Int(-1, 1));
+                    coordinates.Add(source + new Vector2Int(0, 1));
+                    coordinates.Add(source + new Vector2Int(1, 1));
+                    return coordinates;
+                }
+
+                bool nextRowIsOdd = ((source.y + 1) & 1) != 0;
+                coordinates.Add(source + new Vector2Int(nextRowIsOdd ? -1 : 0, 1));
+                coordinates.Add(source + new Vector2Int(nextRowIsOdd ? 0 : 1, 1));
+                return coordinates;
             }
 
             public void RefreshNode(int nodeIndex)
@@ -693,7 +1106,13 @@ namespace LoogaSoft.Advancement.Editor
                     for (int index = 0; index < change.movedElements.Count; index++)
                     {
                         if (change.movedElements[index] is ProgressionNodeElement node)
-                            _owner.SaveNodePosition(node.NodeIndex, node.GetPosition().position);
+                        {
+                            Rect nodeRect = node.GetPosition();
+                            nodeRect.position = _owner.SaveNodePosition(
+                                node.NodeIndex,
+                                nodeRect.position);
+                            node.SetPosition(nodeRect);
+                        }
                     }
                 }
 
@@ -721,6 +1140,60 @@ namespace LoogaSoft.Advancement.Editor
             {
                 foreach (ProgressionNodeElement node in _nodes.Values)
                     node.RefreshPortHover(evt.position);
+            }
+        }
+
+        private sealed class ProgressionLatticeHintElement : GraphElement
+        {
+            public const float Width = 72f;
+            public const float Height = 48f;
+
+            public ProgressionLatticeHintElement(
+                Vector2Int coordinate,
+                bool linksExistingNode,
+                Action<Vector2> activate)
+            {
+                capabilities = (Capabilities)0;
+                pickingMode = PickingMode.Position;
+                tooltip = linksExistingNode
+                    ? $"Connect to the node at {coordinate}."
+                    : $"Create a node at {coordinate}.";
+                style.position = Position.Absolute;
+                style.width = Width;
+                style.height = Height;
+                style.backgroundColor = linksExistingNode
+                    ? new Color(0.25f, 0.65f, 0.95f, 0.24f)
+                    : new Color(0.62f, 0.68f, 0.74f, 0.16f);
+                style.borderLeftWidth = 1f;
+                style.borderRightWidth = 1f;
+                style.borderTopWidth = 1f;
+                style.borderBottomWidth = 1f;
+                Color border = linksExistingNode
+                    ? new Color(0.38f, 0.76f, 1f, 0.85f)
+                    : new Color(0.70f, 0.75f, 0.8f, 0.62f);
+                style.borderLeftColor = border;
+                style.borderRightColor = border;
+                style.borderTopColor = border;
+                style.borderBottomColor = border;
+                style.borderTopLeftRadius = 6f;
+                style.borderTopRightRadius = 6f;
+                style.borderBottomLeftRadius = 6f;
+                style.borderBottomRightRadius = 6f;
+
+                Label label = new(linksExistingNode ? "LINK" : "+");
+                label.style.unityTextAlign = TextAnchor.MiddleCenter;
+                label.style.flexGrow = 1f;
+                label.style.color = border;
+                Add(label);
+
+                RegisterCallback<PointerDownEvent>(evt =>
+                {
+                    if (evt.button != 0)
+                        return;
+
+                    activate?.Invoke(evt.position);
+                    evt.StopImmediatePropagation();
+                });
             }
         }
 
@@ -995,8 +1468,11 @@ namespace LoogaSoft.Advancement.Editor
                 }
 
                 IReadOnlyList<ProgressionBranchDefinition> branches = _owner.GetBranches();
-                if (branches == null)
+                if (branches == null || branches.Count == 0)
+                {
+                    entries.Add(CreateEntry("Create Root", string.Empty));
                     return entries;
+                }
 
                 for (int index = 0; index < branches.Count; index++)
                 {

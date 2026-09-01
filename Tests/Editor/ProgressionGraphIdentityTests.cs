@@ -63,6 +63,67 @@ namespace LoogaSoft.Advancement.Tests
             }
         }
 
+        [TestCase(ProgressionGraphLatticeType.Rectangular)]
+        [TestCase(ProgressionGraphLatticeType.Diamond)]
+        [TestCase(ProgressionGraphLatticeType.Hexagonal)]
+        [TestCase(ProgressionGraphLatticeType.Triangular)]
+        [TestCase(ProgressionGraphLatticeType.Staggered)]
+        public void LatticeCoordinatesRoundTrip(ProgressionGraphLatticeType latticeType)
+        {
+            ProgressionGraphDefinition graph = ScriptableObject.CreateInstance<ProgressionGraphDefinition>();
+            try
+            {
+                SerializedObject serializedGraph = new(graph);
+                serializedGraph.FindProperty("_latticeType").enumValueIndex = (int)latticeType;
+                serializedGraph.FindProperty("_latticeSpacing").vector2Value = new Vector2(230f, 240f);
+                serializedGraph.ApplyModifiedPropertiesWithoutUndo();
+
+                Vector2Int[] coordinates =
+                {
+                    new(-3, -2),
+                    new(0, 0),
+                    new(2, 1),
+                    new(4, 5)
+                };
+                for (int index = 0; index < coordinates.Length; index++)
+                {
+                    Vector2 position = graph.GetLatticePosition(coordinates[index]);
+                    Assert.That(graph.GetLatticeCoordinate(position), Is.EqualTo(coordinates[index]));
+                }
+            }
+            finally
+            {
+                Object.DestroyImmediate(graph);
+            }
+        }
+
+        [Test]
+        public void LatticeAuthoringUsesNodeCoordinateForResolvedPosition()
+        {
+            ProgressionGraphDefinition graph = ScriptableObject.CreateInstance<ProgressionGraphDefinition>();
+            try
+            {
+                SerializedObject serializedGraph = new(graph);
+                serializedGraph.FindProperty("_authoringMode").enumValueIndex =
+                    (int)ProgressionGraphAuthoringMode.Lattice;
+                SerializedProperty nodes = serializedGraph.FindProperty("_nodes");
+                nodes.arraySize = 1;
+                SerializedProperty node = nodes.GetArrayElementAtIndex(0);
+                node.FindPropertyRelative("_hasLatticeCoordinate").boolValue = true;
+                node.FindPropertyRelative("_latticeCoordinate").vector2IntValue = new Vector2Int(3, 2);
+                node.FindPropertyRelative("_graphPosition").vector2Value = new Vector2(999f, 999f);
+                serializedGraph.ApplyModifiedPropertiesWithoutUndo();
+
+                Assert.That(
+                    graph.GetNodePosition(graph.Nodes[0]),
+                    Is.EqualTo(graph.GetLatticePosition(new Vector2Int(3, 2))));
+            }
+            finally
+            {
+                Object.DestroyImmediate(graph);
+            }
+        }
+
         private static void InvokeOnValidate(ProgressionGraphDefinition graph)
         {
             MethodInfo method = typeof(ProgressionGraphDefinition).GetMethod(

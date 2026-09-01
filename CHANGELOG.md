@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.2.0
+
+- Added lattice-based progression graph authoring with rectangular, diamond, hexagonal, triangular, and staggered layouts.
+- Added multiple-root placement and contextual child-cell hints to the graph editor.
+- Added lattice snapping and direct linking to occupied candidate cells.
+
 ## 0.1.1
 
 - Preserved valid authored graph, branch, and node IDs during identity migration.
